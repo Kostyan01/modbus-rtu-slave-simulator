@@ -1,0 +1,365 @@
+<Window x:Class="ModbusRtuSimulator.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:models="clr-namespace:ModbusRtuSimulator.Models"
+        Title="Modbus RTU Slave Simulator" Height="760" Width="1120"
+        MinHeight="620" MinWidth="900" WindowStartupLocation="CenterScreen"
+        PreviewKeyDown="Window_PreviewKeyDown">
+    <Window.Resources>
+            <BooleanToVisibilityConverter x:Key="BooleanToVisibilityConverter" />
+            <DataTemplate x:Key="RegisterBitTemplate" DataType="{x:Type models:RegisterBit}">
+                <DockPanel Margin="20,2,2,2">
+                    <CheckBox DockPanel.Dock="Left" IsChecked="{Binding IsSet, UpdateSourceTrigger=PropertyChanged}"
+                              VerticalAlignment="Center" Margin="3" />
+                    <TextBlock DockPanel.Dock="Left" Text="{Binding Index, StringFormat='bit {0:D2}'}"
+                               Width="55" VerticalAlignment="Center" />
+                    <TextBox Text="{Binding Name, UpdateSourceTrigger=PropertyChanged}" Width="180" Margin="3" />
+                </DockPanel>
+            </DataTemplate>
+            <Style x:Key="UInt16EditorStyle" TargetType="TextBox">
+                <Setter Property="Visibility" Value="Visible" />
+                <Style.Triggers>
+                    <DataTrigger Binding="{Binding IsFloat32}" Value="True">
+                        <Setter Property="Visibility" Value="Collapsed" />
+                    </DataTrigger>
+                </Style.Triggers>
+            </Style>
+            <Style x:Key="Float32EditorStyle" TargetType="TextBox">
+                <Setter Property="Visibility" Value="Collapsed" />
+                <Style.Triggers>
+                    <DataTrigger Binding="{Binding IsFloat32}" Value="True">
+                        <Setter Property="Visibility" Value="Visible" />
+                    </DataTrigger>
+                </Style.Triggers>
+            </Style>
+            <Style x:Key="Float32OrderStyle" TargetType="ComboBox">
+                <Setter Property="Visibility" Value="Collapsed" />
+                <Style.Triggers>
+                    <DataTrigger Binding="{Binding IsFloat32}" Value="True">
+                        <Setter Property="Visibility" Value="Visible" />
+                    </DataTrigger>
+                </Style.Triggers>
+            </Style>
+            <HierarchicalDataTemplate x:Key="RegisterRowTemplate" DataType="{x:Type models:RegisterTreeRow}"
+                                      ItemsSource="{Binding Bits}" ItemTemplate="{StaticResource RegisterBitTemplate}">
+                <StackPanel>
+                    <DockPanel Margin="2">
+                        <TextBox DockPanel.Dock="Left" Text="{Binding AddressText, UpdateSourceTrigger=LostFocus}"
+                                 Width="75" Margin="3" ToolTip="{Binding AddressError}" />
+                        <TextBox DockPanel.Dock="Left" Text="{Binding Register.Name, UpdateSourceTrigger=PropertyChanged}"
+                                 Width="155" Margin="3" />
+                        <TextBox DockPanel.Dock="Left" Text="{Binding Register.Value, UpdateSourceTrigger=PropertyChanged}"
+                                 Width="75" Margin="3" ToolTip="16-битное значение регистра"
+                                 Style="{StaticResource UInt16EditorStyle}" />
+                        <TextBox DockPanel.Dock="Left" Text="{Binding FloatValueText, UpdateSourceTrigger=LostFocus}"
+                                 Width="100" Margin="3" ToolTip="{Binding FloatValueError}"
+                                 Style="{StaticResource Float32EditorStyle}" />
+                        <TextBlock DockPanel.Dock="Left" Text="{Binding HighByte, StringFormat='Hi {0}'}"
+                                   Width="65" VerticalAlignment="Center" />
+                        <TextBlock DockPanel.Dock="Left" Text="{Binding LowByte, StringFormat='Lo {0}'}"
+                                   Width="65" VerticalAlignment="Center" />
+                        <ComboBox DockPanel.Dock="Left" ItemsSource="{Binding FloatWordOrders}"
+                                  SelectedItem="{Binding FloatWordOrder, UpdateSourceTrigger=PropertyChanged}"
+                                  Width="85" Margin="3" ToolTip="Порядок байтов и слов"
+                                  Style="{StaticResource Float32OrderStyle}" />
+                        <Button Content="{Binding FloatModeButtonText}" Tag="{Binding}"
+                                Click="ToggleFloatMode_Click" Margin="2"
+                                Visibility="{Binding IsRegisterArea, Converter={StaticResource BooleanToVisibilityConverter}}" />
+                    </DockPanel>
+                </StackPanel>
+            </HierarchicalDataTemplate>
+    </Window.Resources>
+    <Grid Margin="10">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="230" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <Border Grid.Row="0" Padding="6" BorderBrush="#D0D0D0" BorderThickness="1" CornerRadius="4">
+            <DockPanel>
+                <StackPanel DockPanel.Dock="Top" Orientation="Horizontal">
+                    <Button x:Name="AddPortButton" Content="Добавить порт" Click="AddPort_Click" />
+                    <Button x:Name="RemovePortButton" Content="Удалить порт" Click="RemovePort_Click" />
+                    <Button Content="Обновить COM" ToolTip="Обновить список доступных COM-портов"
+                            Click="RefreshPorts_Click" />
+                    <Button x:Name="StartButton" Content="Запустить все" Click="Start_Click" />
+                    <Button x:Name="StopButton" Content="Остановить все" Click="Stop_Click" IsEnabled="False" />
+                </StackPanel>
+                <DataGrid x:Name="PortsGrid" ItemsSource="{Binding Ports}" SelectedIndex="0"
+                          SelectionChanged="PortsGrid_SelectionChanged" Height="88"
+                          AutoGenerateColumns="False" CanUserAddRows="False" HeadersVisibility="Column">
+                    <DataGrid.Columns>
+                        <DataGridCheckBoxColumn Header="Вкл." Binding="{Binding IsEnabled, UpdateSourceTrigger=PropertyChanged}" Width="48" />
+                        <DataGridTextColumn Header="Псевдоним" Binding="{Binding Name, UpdateSourceTrigger=PropertyChanged}" Width="100" />
+                        <DataGridTemplateColumn Header="COM" Width="85">
+                            <DataGridTemplateColumn.CellTemplate>
+                                <DataTemplate>
+                                    <TextBlock Text="{Binding PortName}" VerticalAlignment="Center" />
+                                </DataTemplate>
+                            </DataGridTemplateColumn.CellTemplate>
+                            <DataGridTemplateColumn.CellEditingTemplate>
+                                <DataTemplate>
+                                    <ComboBox IsEditable="True" Text="{Binding PortName, UpdateSourceTrigger=PropertyChanged}"
+                                              ItemsSource="{Binding DataContext.AvailablePorts, RelativeSource={RelativeSource AncestorType=DataGrid}}" />
+                                </DataTemplate>
+                            </DataGridTemplateColumn.CellEditingTemplate>
+                        </DataGridTemplateColumn>
+                        <DataGridTextColumn Header="Скорость" Binding="{Binding BaudRate, UpdateSourceTrigger=LostFocus}" Width="78" />
+                        <DataGridTextColumn Header="Чётность" Binding="{Binding Parity, UpdateSourceTrigger=LostFocus}" Width="74" />
+                        <DataGridTextColumn Header="Стоп-биты" Binding="{Binding StopBits, UpdateSourceTrigger=LostFocus}" Width="76" />
+                        <DataGridTextColumn Header="Сборка кадра, мс" Binding="{Binding FrameAssemblyTimeoutMs, UpdateSourceTrigger=LostFocus}" Width="*" />
+                    </DataGrid.Columns>
+                </DataGrid>
+            </DockPanel>
+        </Border>
+
+        <Grid Grid.Row="1" Margin="0,8">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="300" />
+                <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
+            <GroupBox Header="Устройства выбранного порта" Grid.Column="0" Margin="3">
+                <DockPanel>
+                    <WrapPanel DockPanel.Dock="Bottom" HorizontalAlignment="Left">
+                        <Button Content="Добавить" Click="AddSlave_Click" />
+                        <Button Content="Копировать" Click="CloneSlave_Click" />
+                        <Button Content="Удалить" Click="RemoveSlave_Click" />
+                        <Button Content="Сценарии" Click="DeviceScripts_Click" />
+                    </WrapPanel>
+                    <DataGrid x:Name="SlavesGrid" ItemsSource="{Binding Slaves}"
+                              SelectionChanged="SlavesGrid_SelectionChanged">
+                        <DataGrid.Columns>
+                            <DataGridCheckBoxColumn Header="Вкл." Binding="{Binding IsEnabled, UpdateSourceTrigger=PropertyChanged}" Width="48" />
+                            <DataGridTextColumn Header="ID" Binding="{Binding Id, UpdateSourceTrigger=PropertyChanged}" Width="55" />
+                            <DataGridTextColumn Header="Имя" Binding="{Binding Name, UpdateSourceTrigger=PropertyChanged}" Width="*" />
+                        </DataGrid.Columns>
+                    </DataGrid>
+                </DockPanel>
+            </GroupBox>
+
+            <GroupBox Header="Карта памяти устройства" Grid.Column="1" Margin="3">
+                <TabControl x:Name="MemoryTabs" SelectionChanged="MemoryTabs_SelectionChanged">
+                    <TabItem Header="Coils" Tag="Coils" />
+                    <TabItem Header="Discrete Inputs" Tag="DiscreteInputs" />
+                    <TabItem Header="Holding Registers" Tag="HoldingRegisters" />
+                    <TabItem Header="Input Registers" Tag="InputRegisters" />
+                    <TabItem Header="Виртуальные переменные">
+                        <TabControl x:Name="VirtualVariablesTabs"
+                                    SelectionChanged="VirtualVariablesTabs_SelectionChanged">
+                            <TabItem Header="Переменные">
+                                <DockPanel>
+                                    <StackPanel DockPanel.Dock="Top" Orientation="Horizontal">
+                                        <Button Content="Добавить переменную" Click="AddVirtualVariable_Click" />
+                                        <Button Content="Удалить переменную" Click="RemoveVirtualVariable_Click" />
+                                    </StackPanel>
+                                    <DataGrid x:Name="VirtualVariablesGrid"
+                                              AutoGenerateColumns="False" CanUserAddRows="False">
+                                        <DataGrid.Columns>
+                                            <DataGridTextColumn Header="Имя"
+                                                                Binding="{Binding Name, UpdateSourceTrigger=PropertyChanged}"
+                                                                Width="*" />
+                                            <DataGridTemplateColumn Header="Тип" Width="110">
+                                                <DataGridTemplateColumn.CellTemplate>
+                                                    <DataTemplate>
+                                                        <TextBlock Text="{Binding Type}" VerticalAlignment="Center" />
+                                                    </DataTemplate>
+                                                </DataGridTemplateColumn.CellTemplate>
+                                                <DataGridTemplateColumn.CellEditingTemplate>
+                                                    <DataTemplate>
+                                                        <ComboBox ItemsSource="{Binding DataContext.VirtualVariableTypes, RelativeSource={RelativeSource AncestorType=DataGrid}}"
+                                                                  SelectedItem="{Binding Type, UpdateSourceTrigger=PropertyChanged}" />
+                                                    </DataTemplate>
+                                                </DataGridTemplateColumn.CellEditingTemplate>
+                                            </DataGridTemplateColumn>
+                                            <DataGridTextColumn Header="Значение"
+                                                                Binding="{Binding ValueText}"
+                                                                IsReadOnly="True" Width="*" />
+                                        </DataGrid.Columns>
+                                    </DataGrid>
+                                </DockPanel>
+                            </TabItem>
+                            <TabItem Header="Выполнить макрос">
+                                <DockPanel>
+                                    <StackPanel DockPanel.Dock="Top" Orientation="Horizontal">
+                                        <Button Content="Добавить правило" Click="AddMacroAction_Click" />
+                                        <Button Content="Удалить правило" Click="RemoveMacroAction_Click" />
+                                        <TextBlock Text="Событийный макрос выполняется на каждом цикле проверки, пока условие истинно."
+                                                   VerticalAlignment="Center" Margin="8,3" />
+                                    </StackPanel>
+                                    <DataGrid x:Name="MacroActionsGrid"
+                                              AutoGenerateColumns="False" CanUserAddRows="False">
+                                        <DataGrid.Columns>
+                                            <DataGridTemplateColumn Header="Виртуальная переменная" Width="190">
+                                                <DataGridTemplateColumn.CellTemplate>
+                                                    <DataTemplate>
+                                                        <ComboBox ItemsSource="{Binding DataContext.MacroSourceVariableOptions, RelativeSource={RelativeSource AncestorType=DataGrid}}"
+                                                                  SelectedItem="{Binding SelectedVariable, UpdateSourceTrigger=PropertyChanged}"
+                                                                  DisplayMemberPath="Name" />
+                                                    </DataTemplate>
+                                                </DataGridTemplateColumn.CellTemplate>
+                                            </DataGridTemplateColumn>
+                                            <DataGridTemplateColumn Header="Событийный макрос" Width="*">
+                                                <DataGridTemplateColumn.CellTemplate>
+                                                    <DataTemplate>
+                                                        <ComboBox ItemsSource="{Binding DataContext.EventMacroOptions, RelativeSource={RelativeSource AncestorType=DataGrid}}"
+                                                                  SelectedItem="{Binding SelectedMacro, UpdateSourceTrigger=PropertyChanged}"
+                                                                  DisplayMemberPath="DisplayName">
+                                                            <ComboBox.Style>
+                                                                <Style TargetType="ComboBox">
+                                                                    <Style.Triggers>
+                                                                        <DataTrigger Binding="{Binding SelectedVariable.Type}"
+                                                                                     Value="{x:Static models:VirtualVariableType.Time}">
+                                                                            <Setter Property="IsEnabled" Value="False" />
+                                                                        </DataTrigger>
+                                                                    </Style.Triggers>
+                                                                </Style>
+                                                            </ComboBox.Style>
+                                                        </ComboBox>
+                                                    </DataTemplate>
+                                                </DataGridTemplateColumn.CellTemplate>
+                                            </DataGridTemplateColumn>
+                                            <DataGridTemplateColumn Header="Условие" Width="150">
+                                                <DataGridTemplateColumn.CellTemplate>
+                                                    <DataTemplate>
+                                                        <Grid>
+                                                            <ComboBox ItemsSource="{Binding DataContext.NumericMacroConditionOptions, RelativeSource={RelativeSource AncestorType=DataGrid}}"
+                                                                      SelectedValuePath="Value"
+                                                                      SelectedValue="{Binding Condition, UpdateSourceTrigger=PropertyChanged}"
+                                                                      DisplayMemberPath="Label">
+                                                                <ComboBox.Style>
+                                                                    <Style TargetType="ComboBox">
+                                                                        <Style.Triggers>
+                                                                            <DataTrigger Binding="{Binding SelectedVariable.Type}"
+                                                                                         Value="{x:Static models:VirtualVariableType.Bool}">
+                                                                                <Setter Property="Visibility" Value="Collapsed" />
+                                                                            </DataTrigger>
+                                                                            <DataTrigger Binding="{Binding SelectedVariable.Type}"
+                                                                                         Value="{x:Static models:VirtualVariableType.Time}">
+                                                                                <Setter Property="Visibility" Value="Collapsed" />
+                                                                            </DataTrigger>
+                                                                        </Style.Triggers>
+                                                                    </Style>
+                                                                </ComboBox.Style>
+                                                            </ComboBox>
+                                                            <TextBlock Text="если TRUE" VerticalAlignment="Center">
+                                                                <TextBlock.Style>
+                                                                    <Style TargetType="TextBlock">
+                                                                        <Setter Property="Visibility" Value="Collapsed" />
+                                                                        <Style.Triggers>
+                                                                            <DataTrigger Binding="{Binding SelectedVariable.Type}"
+                                                                                         Value="{x:Static models:VirtualVariableType.Bool}">
+                                                                                <Setter Property="Visibility" Value="Visible" />
+                                                                            </DataTrigger>
+                                                                        </Style.Triggers>
+                                                                    </Style>
+                                                                </TextBlock.Style>
+                                                            </TextBlock>
+                                                            <TextBlock Text="Нет для TIME" VerticalAlignment="Center">
+                                                                <TextBlock.Style>
+                                                                    <Style TargetType="TextBlock">
+                                                                        <Setter Property="Visibility" Value="Collapsed" />
+                                                                        <Style.Triggers>
+                                                                            <DataTrigger Binding="{Binding SelectedVariable.Type}"
+                                                                                         Value="{x:Static models:VirtualVariableType.Time}">
+                                                                                <Setter Property="Visibility" Value="Visible" />
+                                                                            </DataTrigger>
+                                                                        </Style.Triggers>
+                                                                    </Style>
+                                                                </TextBlock.Style>
+                                                            </TextBlock>
+                                                        </Grid>
+                                                    </DataTemplate>
+                                                </DataGridTemplateColumn.CellTemplate>
+                                            </DataGridTemplateColumn>
+                                            <DataGridTemplateColumn Header="Значение" Width="120">
+                                                <DataGridTemplateColumn.CellTemplate>
+                                                    <DataTemplate>
+                                                        <TextBox Text="{Binding Threshold, UpdateSourceTrigger=LostFocus}">
+                                                            <TextBox.Style>
+                                                                <Style TargetType="TextBox">
+                                                                    <Style.Triggers>
+                                                                        <DataTrigger Binding="{Binding SelectedVariable.Type}"
+                                                                                     Value="{x:Static models:VirtualVariableType.Bool}">
+                                                                            <Setter Property="Visibility" Value="Collapsed" />
+                                                                        </DataTrigger>
+                                                                        <DataTrigger Binding="{Binding SelectedVariable.Type}"
+                                                                                     Value="{x:Static models:VirtualVariableType.Time}">
+                                                                            <Setter Property="Visibility" Value="Collapsed" />
+                                                                        </DataTrigger>
+                                                                    </Style.Triggers>
+                                                                </Style>
+                                                            </TextBox.Style>
+                                                        </TextBox>
+                                                    </DataTemplate>
+                                                </DataGridTemplateColumn.CellTemplate>
+                                            </DataGridTemplateColumn>
+                                        </DataGrid.Columns>
+                                    </DataGrid>
+                                </DockPanel>
+                            </TabItem>
+                        </TabControl>
+                    </TabItem>
+                </TabControl>
+            </GroupBox>
+        </Grid>
+
+        <GroupBox Grid.Row="2" Header="Журналы" Margin="3">
+            <DockPanel>
+                <StackPanel DockPanel.Dock="Top" Orientation="Horizontal">
+                    <Button x:Name="LogScrollButton" Content="Автопрокрутка: вкл"
+                            Click="LogScroll_Click" />
+                    <Button Content="Очистить журналы" Click="ClearLogs_Click" />
+                    <TextBlock Text="Записать следующие (сек.):" VerticalAlignment="Center" Margin="8,3" />
+                    <TextBox x:Name="LogCaptureSecondsBox" Text="10" Width="60" Margin="3"
+                             VerticalContentAlignment="Center" />
+                    <Button x:Name="SaveLogButton" Content="Сохранить журнал" Click="SaveLog_Click" />
+                    <TextBlock x:Name="LogCaptureStatusText" VerticalAlignment="Center" Margin="8,3" />
+                </StackPanel>
+                <TabControl>
+                    <TabItem Header="Обмен выбранного порта">
+                        <DataGrid x:Name="LogGrid" IsReadOnly="True">
+                            <DataGrid.Columns>
+                                <DataGridTextColumn Header="Время" Binding="{Binding Time}" Width="150" />
+                                <DataGridTextColumn Header="Направление" Binding="{Binding Direction}" Width="110" />
+                                <DataGridTextColumn Header="Кадр RTU (hex)" Binding="{Binding Frame}" Width="*" />
+                                <DataGridTextColumn Header="Событие" Binding="{Binding Message}" Width="2*" />
+                            </DataGrid.Columns>
+                        </DataGrid>
+                    </TabItem>
+                    <TabItem Header="Предупреждения выбранного порта">
+                        <DataGrid x:Name="WarningGrid" IsReadOnly="True">
+                            <DataGrid.Columns>
+                                <DataGridTextColumn Header="Время" Binding="{Binding Time}" Width="150" />
+                                <DataGridTextColumn Header="Кадр RTU (hex)" Binding="{Binding Frame}" Width="*" />
+                                <DataGridTextColumn Header="Предупреждение" Binding="{Binding Message}" Width="2*" />
+                            </DataGrid.Columns>
+                        </DataGrid>
+                    </TabItem>
+                    <TabItem Header="Журнал программы">
+                        <DataGrid x:Name="SystemLogGrid" ItemsSource="{Binding LogEntries}" IsReadOnly="True">
+                            <DataGrid.Columns>
+                                <DataGridTextColumn Header="Время" Binding="{Binding Time}" Width="150" />
+                                <DataGridTextColumn Header="Направление" Binding="{Binding Direction}" Width="110" />
+                                <DataGridTextColumn Header="Кадр RTU (hex)" Binding="{Binding Frame}" Width="*" />
+                                <DataGridTextColumn Header="Событие" Binding="{Binding Message}" Width="2*" />
+                            </DataGrid.Columns>
+                        </DataGrid>
+                    </TabItem>
+                </TabControl>
+            </DockPanel>
+        </GroupBox>
+
+        <DockPanel Grid.Row="3" Margin="5,8,5,0">
+            <StackPanel Orientation="Horizontal" DockPanel.Dock="Left">
+                <Button Content="Сценарии сервера" Click="Scripts_Click" />
+                <Button Content="Открыть (Ctrl+O)" Click="Import_Click" />
+                <Button Content="Сохранить (Ctrl+S)" Click="Save_Click" />
+                <Button Content="Сохранить как..." Click="Export_Click" />
+            </StackPanel>
+            <TextBlock x:Name="StatusText" Text="Остановлен" VerticalAlignment="Center"
+                       HorizontalAlignment="Right" DockPanel.Dock="Right" />
+        </DockPanel>
+    </Grid>
+</Window>

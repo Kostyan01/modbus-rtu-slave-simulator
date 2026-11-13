@@ -1,0 +1,154 @@
+<Window x:Class="ModbusRtuSimulator.ScriptEditorWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:local="clr-namespace:ModbusRtuSimulator"
+        xmlns:models="clr-namespace:ModbusRtuSimulator.Models"
+        Title="Сценарии сервера" Height="760" Width="1280"
+        MinHeight="600" MinWidth="1080" WindowStartupLocation="CenterOwner">
+    <Window.Resources>
+        <HierarchicalDataTemplate DataType="{x:Type local:TagBrowserNode}" ItemsSource="{Binding Children}">
+            <TextBlock Text="{Binding DisplayName}" />
+        </HierarchicalDataTemplate>
+    </Window.Resources>
+    <Grid Margin="10">
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="220" />
+            <ColumnDefinition Width="*" />
+        </Grid.ColumnDefinitions>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <DockPanel Grid.Column="0" Grid.Row="0" Margin="0,0,8,0">
+            <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal">
+                <Button Content="Добавить" Click="AddScript_Click" />
+                <Button Content="Удалить" Click="RemoveScript_Click" />
+            </StackPanel>
+            <ListBox ItemsSource="{Binding Scripts}" SelectedItem="{Binding SelectedScript, Mode=TwoWay}">
+                <ListBox.ItemTemplate>
+                    <DataTemplate>
+                        <TextBlock Text="{Binding Name}" Margin="3" />
+                    </DataTemplate>
+                </ListBox.ItemTemplate>
+            </ListBox>
+        </DockPanel>
+
+        <Grid Grid.Column="1" Grid.Row="0" IsEnabled="{Binding HasSelectedScript}">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="*" />
+            </Grid.RowDefinitions>
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="145" />
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="120" />
+            </Grid.ColumnDefinitions>
+
+            <TextBlock Grid.Row="0" Grid.Column="0" Text="Имя сценария" VerticalAlignment="Center" Margin="4" />
+            <TextBox Grid.Row="0" Grid.Column="1" Text="{Binding SelectedScript.Name, UpdateSourceTrigger=PropertyChanged}" Margin="4" />
+            <CheckBox Grid.Row="0" Grid.Column="2" Content="Включён"
+                      IsChecked="{Binding SelectedScript.IsEnabled, UpdateSourceTrigger=PropertyChanged}"
+                      VerticalAlignment="Center" Margin="4" />
+
+            <TextBlock Grid.Row="1" Grid.Column="0" Text="Условие запуска" VerticalAlignment="Center" Margin="4" />
+            <ComboBox Grid.Row="1" Grid.Column="1" Grid.ColumnSpan="2"
+                      ItemsSource="{Binding TriggerOptions}" DisplayMemberPath="Label"
+                      SelectedValuePath="Value"
+                      SelectedValue="{Binding SelectedScript.Trigger, UpdateSourceTrigger=PropertyChanged}"
+                      Margin="4" />
+
+            <TextBlock Grid.Row="2" Grid.Column="0" Text="Интервал цикла" VerticalAlignment="Center" Margin="4">
+                <TextBlock.Style>
+                    <Style TargetType="TextBlock">
+                        <Setter Property="Visibility" Value="Collapsed" />
+                        <Style.Triggers>
+                            <DataTrigger Binding="{Binding SelectedScript.Trigger}" Value="{x:Static models:ScriptTrigger.Cyclic}">
+                                <Setter Property="Visibility" Value="Visible" />
+                            </DataTrigger>
+                        </Style.Triggers>
+                    </Style>
+                </TextBlock.Style>
+            </TextBlock>
+            <StackPanel Grid.Row="2" Grid.Column="1" Grid.ColumnSpan="2" Orientation="Horizontal">
+                <StackPanel.Style>
+                    <Style TargetType="StackPanel">
+                        <Setter Property="Visibility" Value="Collapsed" />
+                        <Style.Triggers>
+                            <DataTrigger Binding="{Binding SelectedScript.Trigger}" Value="{x:Static models:ScriptTrigger.Cyclic}">
+                                <Setter Property="Visibility" Value="Visible" />
+                            </DataTrigger>
+                        </Style.Triggers>
+                    </Style>
+                </StackPanel.Style>
+                <TextBox Width="100" Text="{Binding SelectedScript.IntervalMs, UpdateSourceTrigger=LostFocus}" Margin="4" />
+                <TextBlock Text="мс (50–60000)" VerticalAlignment="Center" Margin="4" />
+            </StackPanel>
+
+            <GroupBox Grid.Row="3" Grid.Column="0" Grid.ColumnSpan="3" Header="Structured Text (ST)" Margin="3">
+                <TabControl x:Name="EditorTabs">
+                    <TabItem Header="Код">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="330" />
+                            </Grid.ColumnDefinitions>
+                            <TextBox x:Name="CodeTextBox"
+                                     Text="{Binding SelectedScript.Code, UpdateSourceTrigger=PropertyChanged}"
+                                     AcceptsReturn="True" AcceptsTab="True" VerticalScrollBarVisibility="Auto"
+                                     HorizontalScrollBarVisibility="Auto" TextWrapping="NoWrap"
+                                     FontFamily="Consolas" FontSize="14" Padding="8" />
+                            <GroupBox Grid.Column="1" Header="Переменные и биты" Margin="4">
+                                <TreeView x:Name="TagBrowser"
+                                          ItemsSource="{Binding TagBrowserNodes}"
+                                          SelectedItemChanged="TagBrowser_SelectedItemChanged"
+                                          TreeViewItem.Expanded="TagBrowserItem_Expanded" />
+                            </GroupBox>
+                        </Grid>
+                    </TabItem>
+                    <TabItem Header="Справка">
+                        <ScrollViewer VerticalScrollBarVisibility="Auto">
+                            <StackPanel Margin="10">
+                                <TextBlock Text="Объявление переменных" FontWeight="Bold" />
+                                <TextBlock FontFamily="Consolas" TextWrapping="Wrap" Margin="0,3,0,10"
+                                           Text="VAR&#10;    rawValue : UINT;&#10;    scaledValue : REAL;&#10;    engineeringValue : REAL;&#10;    running : BOOL;&#10;    delay : TON;&#10;    index : INT;&#10;END_VAR&#10;&#10;rawValue := Device1.Temperature;&#10;Device1.Temperature := rawValue;" />
+                                <TextBlock Text="Условия и циклы" FontWeight="Bold" />
+                                <TextBlock FontFamily="Consolas" TextWrapping="Wrap" Margin="0,3,0,10"
+                                           Text="IF rawValue &gt;= 100 THEN&#10;    running := TRUE;&#10;ELSIF rawValue &gt; 0 THEN&#10;    running := FALSE;&#10;ELSE&#10;    running := FALSE;&#10;END_IF;&#10;&#10;FOR index := 0 TO 3 DO&#10;    rawValue := rawValue + 1;&#10;END_FOR;" />
+                                <TextBlock Text="Именованный бит регистра" FontWeight="Bold" />
+                                <TextBlock FontFamily="Consolas" TextWrapping="Wrap" Margin="0,3,0,10"
+                                           Text="VAR&#10;    alarm : BOOL;&#10;END_VAR&#10;alarm := Device1.Status.Alarm;&#10;Device1.Status.Alarm := alarm;" />
+                                <TextBlock Text="Тег на другом порту в общем сценарии" FontWeight="Bold" />
+                                <TextBlock FontFamily="Consolas" TextWrapping="Wrap" Margin="0,3,0,10"
+                                           Text="LineA.BRMOD1.Command := LineB.BRMOD1.Result; Имена имеют вид ПсевдонимПорта.Устройство.Тег. Во внутреннем сценарии вместо полного имени используйте THIS.Tag." />
+                                <TextBlock Text="Внутренний сценарий устройства" FontWeight="Bold" />
+                                <TextBlock FontFamily="Consolas" TextWrapping="Wrap" Margin="0,3,0,10"
+                                           Text="THIS обозначает устройство-владелец сценария. Пример: THIS.Output := THIS.Input;. Сценарий копируется вместе с устройством, и THIS автоматически указывает на копию." />
+                                <TextBlock Text="Линейные преобразования" FontWeight="Bold" />
+                                <TextBlock FontFamily="Consolas" TextWrapping="Wrap" Margin="0,3,0,10"
+                                           Text="normalized := NORM_X(0.0, rawValue, 4095.0);&#10;engineeringValue := SCALE_X(0.0, normalized, 100.0);&#10;engineeringValue := LIN_SCALE(rawValue, 0.0, 4095.0, 0.0, 100.0);" />
+                                <TextBlock Text="Таймеры" FontWeight="Bold" />
+                                <TextBlock FontFamily="Consolas" TextWrapping="Wrap" Margin="0,3,0,3"
+                                           Text="delay(IN := running, PT := T#2s);&#10;IF delay.Q THEN&#10;    Device1.Status.Alarm := TRUE;&#10;END_IF;&#10;&#10;TON — задержка включения; TOF — задержка выключения; TP — импульс. Читайте выходы .Q и .ET. Таймеры сохраняют состояние между запусками; для обновления таймера задайте циклический режим. PT также принимает TIME#250ms, T#2s, T#1m30s." />
+                                <TextBlock Text="Функции: ABS, SQRT, ROUND, TRUNC, MIN, MAX, LIMIT, UINT, INT, DINT, UDINT, BYTE, WORD, REAL, LREAL, BOOL, TIME. Комментарии: // ... или (* ... *). Имена устройства/тега с пробелами заключайте в кавычки: &quot;Устройство 1&quot;.&quot;Температура&quot;."
+                                           TextWrapping="Wrap" Margin="0,8,0,0" />
+                                <TextBlock Text="Реализовано ядро ST; массивы, структуры, пользовательские функции и строковые переменные пока не поддерживаются. Скрипты прежнего собственного синтаксиса требуется переписать."
+                                           TextWrapping="Wrap" Margin="0,8,0,0" />
+                            </StackPanel>
+                        </ScrollViewer>
+                    </TabItem>
+                </TabControl>
+            </GroupBox>
+        </Grid>
+
+        <TextBlock Grid.Row="1" Grid.ColumnSpan="2" Margin="4,8"
+                   Text="Синтаксис IEC 61131-3 ST: объявления VAR, типы, IF/ELSIF, CASE, циклы, таймеры и функции. Для событийного режима настройте вызов макроса во вкладке виртуальных переменных. Во внутренних сценариях устройства используйте THIS.Tag." />
+        <StackPanel Grid.Row="2" Grid.ColumnSpan="2" Orientation="Horizontal" HorizontalAlignment="Right">
+            <Button Content="Выполнить сейчас" Click="RunScript_Click" />
+            <Button Content="Готово" IsDefault="True" Click="Close_Click" />
+        </StackPanel>
+    </Grid>
+</Window>

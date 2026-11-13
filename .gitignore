@@ -1,0 +1,13 @@
+bin/
+obj/
+.vs/
+Installer/publish/
+Installer/Output/
+TestResults/
+*.user
+*.suo
+Modbus RTU Simulator.lnk
+# Local device configs, traffic logs, and user macro samples.
+/Tests/*.json
+/Tests/*.csv
+/Макрос.txt
